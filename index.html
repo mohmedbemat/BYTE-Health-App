@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Camera Example</title>
+</head>
+<body>
+  <h1>Camera Feed</h1>
+  <video id="video" width="400" height="300" autoplay></video>
+  <button id="capture">Capture</button>
+  <canvas id="canvas" width="400" height="300"></canvas>
+
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const context = canvas.getContext("2d");
+
+    // Access camera
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        video.srcObject = stream;
+      })
+      .catch(err => console.error("Error:", err));
+
+    // Capture frame and send to Python backend
+    document.getElementById("capture").addEventListener("click", () => {
+      context.drawImage(video, 0, 0, 400, 300);
+      const dataURL = canvas.toDataURL("image/png");
+
+      fetch("/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataURL })
+      }).then(response => response.json())
+        .then(data => console.log(data));
+    });
+  </script>
+</body>
+</html>
