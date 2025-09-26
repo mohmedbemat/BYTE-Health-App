@@ -1,25 +1,117 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Camera Example</title>
+  <title>Food Barcode Scanner</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .camera-section {
+      flex: 1;
+      min-width: 300px;
+    }
+    .nutrition-section {
+      flex: 1;
+      min-width: 300px;
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 8px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 5px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    .nutrition-info {
+      margin-top: 10px;
+    }
+    .nutrition-item {
+      margin: 5px 0;
+      padding: 5px;
+      background: white;
+      border-radius: 3px;
+    }
+    .status {
+      margin: 10px 0;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .status.scanning {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+    }
+  </style>
 </head>
 <body>
-  <h1>Camera Feed</h1>
-  <video id="video" width="400" height="300" autoplay></video>
-  <button id="capture">Capture</button>
-  <canvas id="canvas" width="400" height="300"></canvas>
+  <h1>Food Barcode Scanner</h1>
+  
+  <div class="container">
+    <div class="camera-section">
+      <h3>Camera Feed</h3>
+      <video id="video" width="400" height="300" autoplay></video>
+      <div>
+        <button id="capture">📷 Capture Photo</button>
+        <button id="scanBarcode">🔍 Scan Barcode</button>
+        <button id="continuousScan">🔄 Auto Scan</button>
+      </div>
+      <canvas id="canvas" width="400" height="300" style="display: none;"></canvas>
+      <div id="status"></div>
+    </div>
+    
+    <div class="nutrition-section">
+      <h3>Nutrition Information</h3>
+      <div id="nutritionInfo">
+        <p>Scan a food barcode to see nutrition information</p>
+      </div>
+    </div>
+  </div>
 
   <script>
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const context = canvas.getContext("2d");
+    const statusDiv = document.getElementById("status");
+    const nutritionDiv = document.getElementById("nutritionInfo");
+    
+    let continuousScanning = false;
+    let scanInterval;
 
     // Access camera
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => {
         video.srcObject = stream;
+        showStatus("Camera ready! Point at a food barcode and click 'Scan Barcode'", "success");
       })
-      .catch(err => console.error("Error:", err));
+      .catch(err => {
+        console.error("Error:", err);
+        showStatus("Camera access denied. Please allow camera access.", "error");
+      });
 
     // Capture frame and send to Python backend
     document.getElementById("capture").addEventListener("click", () => {
@@ -33,6 +125,105 @@
       }).then(response => response.json())
         .then(data => console.log(data));
     });
+
+    // Scan barcode
+    document.getElementById("scanBarcode").addEventListener("click", () => {
+      scanForBarcode();
+    });
+
+    // Continuous scanning toggle
+    document.getElementById("continuousScan").addEventListener("click", () => {
+      if (continuousScanning) {
+        stopContinuousScan();
+      } else {
+        startContinuousScan();
+      }
+    });
+
+    function scanForBarcode() {
+      context.drawImage(video, 0, 0, 400, 300);
+      const dataURL = canvas.toDataURL("image/png");
+      
+      showStatus("Scanning for barcode...", "scanning");
+
+      fetch("/scan-barcode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataURL })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === "success") {
+          showStatus(`Barcode found: ${data.barcode}`, "success");
+          displayNutritionInfo(data.nutrition);
+        } else if (data.status === "no_barcode") {
+          showStatus("No barcode detected. Try adjusting the camera angle.", "error");
+        } else {
+          showStatus(`Error: ${data.message}`, "error");
+        }
+      })
+      .catch(error => {
+        showStatus(`Network error: ${error.message}`, "error");
+      });
+    }
+
+    function startContinuousScan() {
+      continuousScanning = true;
+      document.getElementById("continuousScan").textContent = "⏸️ Stop Auto Scan";
+      showStatus("Auto scanning enabled - point at barcode", "scanning");
+      
+      scanInterval = setInterval(() => {
+        scanForBarcode();
+      }, 2000); // Scan every 2 seconds
+    }
+
+    function stopContinuousScan() {
+      continuousScanning = false;
+      document.getElementById("continuousScan").textContent = "🔄 Auto Scan";
+      clearInterval(scanInterval);
+      showStatus("Auto scanning stopped", "success");
+    }
+
+    function showStatus(message, type) {
+      statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+    }
+
+    function displayNutritionInfo(nutrition) {
+      if (nutrition.error) {
+        nutritionDiv.innerHTML = `
+          <div class="status error">
+            <strong>Product not found</strong><br>
+            ${nutrition.error}
+          </div>
+        `;
+        return;
+      }
+
+      const calories = nutrition.calories_per_100g ? `${nutrition.calories_per_100g} kcal` : 'Not available';
+      const protein = nutrition.protein_per_100g ? `${nutrition.protein_per_100g}g` : 'Not available';
+      const fat = nutrition.fat_per_100g ? `${nutrition.fat_per_100g}g` : 'Not available';
+      const carbs = nutrition.carbs_per_100g ? `${nutrition.carbs_per_100g}g` : 'Not available';
+      const fiber = nutrition.fiber_per_100g ? `${nutrition.fiber_per_100g}g` : 'Not available';
+      const sugar = nutrition.sugar_per_100g ? `${nutrition.sugar_per_100g}g` : 'Not available';
+
+      nutritionDiv.innerHTML = `
+        <div class="nutrition-info">
+          <h4>${nutrition.product_name}</h4>
+          <p><strong>Brand:</strong> ${nutrition.brand}</p>
+          ${nutrition.serving_size ? `<p><strong>Serving Size:</strong> ${nutrition.serving_size}</p>` : ''}
+          
+          <h5>Nutrition per 100g:</h5>
+          <div class="nutrition-item"><strong>🔥 Calories:</strong> ${calories}</div>
+          <div class="nutrition-item"><strong>🥩 Protein:</strong> ${protein}</div>
+          <div class="nutrition-item"><strong>🧈 Fat:</strong> ${fat}</div>
+          <div class="nutrition-item"><strong>🍞 Carbs:</strong> ${carbs}</div>
+          <div class="nutrition-item"><strong>🌾 Fiber:</strong> ${fiber}</div>
+          <div class="nutrition-item"><strong>🍯 Sugar:</strong> ${sugar}</div>
+          
+          ${nutrition.image_url ? `<img src="${nutrition.image_url}" alt="Product image" style="max-width: 200px; margin-top: 10px; border-radius: 5px;">` : ''}
+        </div>
+      `;
+    }
   </script>
 </body>
 </html>
