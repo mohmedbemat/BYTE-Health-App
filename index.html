@@ -76,9 +76,7 @@
       <h3>Camera Feed</h3>
       <video id="video" width="400" height="300" autoplay></video>
       <div>
-        <button id="capture">📷 Capture Photo</button>
-        <button id="scanBarcode">🔍 Scan Barcode</button>
-        <button id="continuousScan">🔄 Auto Scan</button>
+        <button id="stopScan" style="background: #dc3545;">⏹️ Stop Scanning</button>
       </div>
       <canvas id="canvas" width="400" height="300" style="display: none;"></canvas>
       <div id="status"></div>
@@ -101,42 +99,35 @@
     
     let continuousScanning = false;
     let scanInterval;
+    let lastScannedBarcode = null;
+    let lastScanTime = 0;
 
     // Access camera
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => {
         video.srcObject = stream;
-        showStatus("Camera ready! Point at a food barcode and click 'Scan Barcode'", "success");
+        showStatus("Camera ready! Auto-scanning enabled - point at a food barcode", "success");
+        
+        // Start scanning automatically after camera is ready
+        setTimeout(() => {
+          startContinuousScan();
+        }, 1000);
       })
       .catch(err => {
         console.error("Error:", err);
         showStatus("Camera access denied. Please allow camera access.", "error");
       });
 
-    // Capture frame and send to Python backend
-    document.getElementById("capture").addEventListener("click", () => {
-      context.drawImage(video, 0, 0, 400, 300);
-      const dataURL = canvas.toDataURL("image/png");
-
-      fetch("http://127.0.0.1:5000/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataURL })
-      }).then(response => response.json())
-        .then(data => console.log(data));
-    });
-
-    // Scan barcode
-    document.getElementById("scanBarcode").addEventListener("click", () => {
-      scanForBarcode();
-    });
-
-    // Continuous scanning toggle
-    document.getElementById("continuousScan").addEventListener("click", () => {
+    // Stop scanning button
+    document.getElementById("stopScan").addEventListener("click", () => {
       if (continuousScanning) {
         stopContinuousScan();
+        document.getElementById("stopScan").textContent = "▶️ Resume Scanning";
+        document.getElementById("stopScan").style.background = "#28a745";
       } else {
         startContinuousScan();
+        document.getElementById("stopScan").textContent = "⏹️ Stop Scanning";
+        document.getElementById("stopScan").style.background = "#dc3545";
       }
     });
 
@@ -144,22 +135,18 @@
       context.drawImage(video, 0, 0, 400, 300);
       const dataURL = canvas.toDataURL("image/png");
       
-      showStatus("Scanning for barcode...", "scanning");
-
+      const currentTime = Date.now();
+      
       fetch("http://127.0.0.1:5000/scan-barcode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: dataURL })
       })
       .then(response => {
-        console.log("Response status:", response.status);
-        console.log("Response headers:", response.headers);
-        
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
-        // Check if response is JSON
         const contentType = response.headers.get("content-type");
         if (!contentType || !contentType.includes("application/json")) {
           throw new Error(`Expected JSON response, got: ${contentType}`);
@@ -168,37 +155,44 @@
         return response.json();
       })
       .then(data => {
-        console.log("Received data:", data);
         if (data.status === "success") {
-          showStatus(`Barcode found: ${data.barcode}`, "success");
-          displayNutritionInfo(data.nutrition);
+          // Avoid showing the same barcode repeatedly
+          if (data.barcode !== lastScannedBarcode || (currentTime - lastScanTime) > 5000) {
+            lastScannedBarcode = data.barcode;
+            lastScanTime = currentTime;
+            showStatus(`✅ Found: ${data.nutrition.product_name}`, "success");
+            displayNutritionInfo(data.nutrition);
+          }
         } else if (data.status === "no_barcode") {
-          showStatus("No barcode detected. Try adjusting the camera angle.", "error");
+          // Only show scanning status occasionally to avoid spam
+          if ((currentTime - lastScanTime) > 3000) {
+            showStatus("🔍 Scanning for barcode...", "scanning");
+          }
         } else {
-          showStatus(`Error: ${data.message}`, "error");
+          showStatus(`❌ Error: ${data.message}`, "error");
         }
       })
       .catch(error => {
-        console.error("Full error:", error);
-        showStatus(`Network error: ${error.message}`, "error");
+        console.error("Scan error:", error);
+        if ((currentTime - lastScanTime) > 5000) {
+          showStatus(`❌ Connection error: ${error.message}`, "error");
+        }
       });
     }
 
     function startContinuousScan() {
       continuousScanning = true;
-      document.getElementById("continuousScan").textContent = "⏸️ Stop Auto Scan";
-      showStatus("Auto scanning enabled - point at barcode", "scanning");
+      showStatus("🔄 Auto-scanning enabled", "scanning");
       
       scanInterval = setInterval(() => {
         scanForBarcode();
-      }, 2000); // Scan every 2 seconds
+      }, 1500); // Scan every 1.5 seconds for faster response
     }
 
     function stopContinuousScan() {
       continuousScanning = false;
-      document.getElementById("continuousScan").textContent = "🔄 Auto Scan";
       clearInterval(scanInterval);
-      showStatus("Auto scanning stopped", "success");
+      showStatus("⏸️ Scanning paused", "success");
     }
 
     function showStatus(message, type) {
@@ -216,14 +210,6 @@
         return;
       }
 
-      // Format nutrition values - prefer per serving/container over per 100g
-      const calories = nutrition.calories ? `${nutrition.calories} calories` : 'Not available';
-      const protein = nutrition.protein ? `${nutrition.protein}g` : 'Not available';
-      const fat = nutrition.fat ? `${nutrition.fat}g` : 'Not available';
-      const carbs = nutrition.carbs ? `${nutrition.carbs}g` : 'Not available';
-      const fiber = nutrition.fiber ? `${nutrition.fiber}g` : 'Not available';
-      const sugar = nutrition.sugar ? `${nutrition.sugar}g` : 'Not available';
-
       // Determine what unit we're showing
       let nutritionLabel = "Nutrition per serving";
       if (nutrition.serving_size) {
@@ -232,6 +218,36 @@
         nutritionLabel = `Nutrition per package (${nutrition.quantity})`;
       } else if (nutrition.calories_per_100g && nutrition.calories === nutrition.calories_per_100g) {
         nutritionLabel = "Nutrition per 100g";
+      }
+
+      // Build nutrition items only for available nutrients
+      let nutritionItems = '';
+      
+      if (nutrition.calories) {
+        nutritionItems += `<div class="nutrition-item"><strong>🔥 Calories:</strong> ${nutrition.calories} calories</div>`;
+      }
+      if (nutrition.protein) {
+        nutritionItems += `<div class="nutrition-item"><strong>🥩 Protein:</strong> ${nutrition.protein}g</div>`;
+      }
+      if (nutrition.fat) {
+        nutritionItems += `<div class="nutrition-item"><strong>🧈 Fat:</strong> ${nutrition.fat}g</div>`;
+      }
+      if (nutrition.carbs) {
+        nutritionItems += `<div class="nutrition-item"><strong>🍞 Carbs:</strong> ${nutrition.carbs}g</div>`;
+      }
+      if (nutrition.fiber) {
+        nutritionItems += `<div class="nutrition-item"><strong>🌾 Fiber:</strong> ${nutrition.fiber}g</div>`;
+      }
+      if (nutrition.sugar) {
+        nutritionItems += `<div class="nutrition-item"><strong>🍯 Sugar:</strong> ${nutrition.sugar}g</div>`;
+      }
+      if (nutrition.salt) {
+        nutritionItems += `<div class="nutrition-item"><strong>🧂 Salt:</strong> ${nutrition.salt}g</div>`;
+      }
+
+      // Show message if no nutrition data is available
+      if (!nutritionItems) {
+        nutritionItems = '<div class="nutrition-item"><em>No nutrition information available for this product</em></div>';
       }
 
       nutritionDiv.innerHTML = `
@@ -243,12 +259,7 @@
           ${nutrition.nutrition_grade ? `<p><strong>Nutrition Grade:</strong> <span style="background: ${nutrition.nutrition_grade === 'a' ? '#4CAF50' : nutrition.nutrition_grade === 'b' ? '#8BC34A' : nutrition.nutrition_grade === 'c' ? '#FFC107' : nutrition.nutrition_grade === 'd' ? '#FF9800' : '#F44336'}; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;">${nutrition.nutrition_grade?.toUpperCase()}</span></p>` : ''}
           
           <h5>${nutritionLabel}:</h5>
-          <div class="nutrition-item"><strong>🔥 Calories:</strong> ${calories}</div>
-          <div class="nutrition-item"><strong>🥩 Protein:</strong> ${protein}</div>
-          <div class="nutrition-item"><strong>🧈 Fat:</strong> ${fat}</div>
-          <div class="nutrition-item"><strong>🍞 Carbs:</strong> ${carbs}</div>
-          <div class="nutrition-item"><strong>🌾 Fiber:</strong> ${fiber}</div>
-          <div class="nutrition-item"><strong>🍯 Sugar:</strong> ${sugar}</div>
+          ${nutritionItems}
           
           ${nutrition.image_url ? `<img src="${nutrition.image_url}" alt="Product image" style="max-width: 200px; margin-top: 10px; border-radius: 5px;">` : ''}
         </div>
