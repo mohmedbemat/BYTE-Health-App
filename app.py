@@ -6,11 +6,34 @@ from pyzbar import pyzbar
 from PIL import Image
 import io
 import requests
+<<<<<<< HEAD
 import json
 import os
 from datetime import datetime
+=======
+#import python.env  # Ensure environment variables are loaded
+import google.generativeai as genai
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+genai.configure(api_key=os.getenv("API_KEY"))
+
+
+>>>>>>> e58f0956e33a9ed7da8276a9d49fd60b9069d40e
 
 app = Flask(__name__)
+@app.route("/chat", methods=["POST"])
+def chat():
+    user_message = request.json.get("message", "")
+
+    if not user_message:
+        return jsonify({"reply": "⚠️ Please type something."})
+
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    response = model.generate_content(f"You are a health assistant. Answer: {user_message}")
+
+    return jsonify({"reply": response.text})
 
 # Add CORS headers manually
 @app.after_request
