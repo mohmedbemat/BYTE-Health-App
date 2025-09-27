@@ -112,18 +112,60 @@ def get_nutrition_info(barcode):
                 product = data.get("product", {})
                 
                 # Extract nutrition information
+                nutriments = product.get("nutriments", {})
+                
+                # Prefer per-serving values, fall back to per-100g
                 nutrition = {
                     "product_name": product.get("product_name", "Unknown Product"),
                     "brand": product.get("brands", "Unknown Brand"),
-                    "calories_per_100g": product.get("nutriments", {}).get("energy-kcal_100g"),
-                    "protein_per_100g": product.get("nutriments", {}).get("proteins_100g"),
-                    "fat_per_100g": product.get("nutriments", {}).get("fat_100g"),
-                    "carbs_per_100g": product.get("nutriments", {}).get("carbohydrates_100g"),
-                    "fiber_per_100g": product.get("nutriments", {}).get("fiber_100g"),
-                    "sugar_per_100g": product.get("nutriments", {}).get("sugars_100g"),
-                    "salt_per_100g": product.get("nutriments", {}).get("salt_100g"),
+                    "quantity": product.get("quantity"),
                     "serving_size": product.get("serving_size"),
-                    "image_url": product.get("image_url")
+                    
+                    # Try to get per-serving values first, then per-container, then per-100g
+                    "calories": (
+                        nutriments.get("energy-kcal_serving") or 
+                        nutriments.get("energy-kcal") or 
+                        nutriments.get("energy-kcal_100g")
+                    ),
+                    "protein": (
+                        nutriments.get("proteins_serving") or 
+                        nutriments.get("proteins") or 
+                        nutriments.get("proteins_100g")
+                    ),
+                    "fat": (
+                        nutriments.get("fat_serving") or 
+                        nutriments.get("fat") or 
+                        nutriments.get("fat_100g")
+                    ),
+                    "carbs": (
+                        nutriments.get("carbohydrates_serving") or 
+                        nutriments.get("carbohydrates") or 
+                        nutriments.get("carbohydrates_100g")
+                    ),
+                    "fiber": (
+                        nutriments.get("fiber_serving") or 
+                        nutriments.get("fiber") or 
+                        nutriments.get("fiber_100g")
+                    ),
+                    "sugar": (
+                        nutriments.get("sugars_serving") or 
+                        nutriments.get("sugars") or 
+                        nutriments.get("sugars_100g")
+                    ),
+                    "salt": (
+                        nutriments.get("salt_serving") or 
+                        nutriments.get("salt") or 
+                        nutriments.get("salt_100g")
+                    ),
+                    
+                    # Also include per-100g for reference
+                    "calories_per_100g": nutriments.get("energy-kcal_100g"),
+                    "protein_per_100g": nutriments.get("proteins_100g"),
+                    "fat_per_100g": nutriments.get("fat_100g"),
+                    "carbs_per_100g": nutriments.get("carbohydrates_100g"),
+                    
+                    "image_url": product.get("image_url"),
+                    "nutrition_grade": product.get("nutrition_grades")
                 }
                 
                 return nutrition

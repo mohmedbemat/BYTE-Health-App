@@ -216,20 +216,33 @@
         return;
       }
 
-      const calories = nutrition.calories_per_100g ? `${nutrition.calories_per_100g} kcal` : 'Not available';
-      const protein = nutrition.protein_per_100g ? `${nutrition.protein_per_100g}g` : 'Not available';
-      const fat = nutrition.fat_per_100g ? `${nutrition.fat_per_100g}g` : 'Not available';
-      const carbs = nutrition.carbs_per_100g ? `${nutrition.carbs_per_100g}g` : 'Not available';
-      const fiber = nutrition.fiber_per_100g ? `${nutrition.fiber_per_100g}g` : 'Not available';
-      const sugar = nutrition.sugar_per_100g ? `${nutrition.sugar_per_100g}g` : 'Not available';
+      // Format nutrition values - prefer per serving/container over per 100g
+      const calories = nutrition.calories ? `${nutrition.calories} calories` : 'Not available';
+      const protein = nutrition.protein ? `${nutrition.protein}g` : 'Not available';
+      const fat = nutrition.fat ? `${nutrition.fat}g` : 'Not available';
+      const carbs = nutrition.carbs ? `${nutrition.carbs}g` : 'Not available';
+      const fiber = nutrition.fiber ? `${nutrition.fiber}g` : 'Not available';
+      const sugar = nutrition.sugar ? `${nutrition.sugar}g` : 'Not available';
+
+      // Determine what unit we're showing
+      let nutritionLabel = "Nutrition per serving";
+      if (nutrition.serving_size) {
+        nutritionLabel = `Nutrition per ${nutrition.serving_size}`;
+      } else if (nutrition.quantity) {
+        nutritionLabel = `Nutrition per package (${nutrition.quantity})`;
+      } else if (nutrition.calories_per_100g && nutrition.calories === nutrition.calories_per_100g) {
+        nutritionLabel = "Nutrition per 100g";
+      }
 
       nutritionDiv.innerHTML = `
         <div class="nutrition-info">
           <h4>${nutrition.product_name}</h4>
           <p><strong>Brand:</strong> ${nutrition.brand}</p>
+          ${nutrition.quantity ? `<p><strong>Package Size:</strong> ${nutrition.quantity}</p>` : ''}
           ${nutrition.serving_size ? `<p><strong>Serving Size:</strong> ${nutrition.serving_size}</p>` : ''}
+          ${nutrition.nutrition_grade ? `<p><strong>Nutrition Grade:</strong> <span style="background: ${nutrition.nutrition_grade === 'a' ? '#4CAF50' : nutrition.nutrition_grade === 'b' ? '#8BC34A' : nutrition.nutrition_grade === 'c' ? '#FFC107' : nutrition.nutrition_grade === 'd' ? '#FF9800' : '#F44336'}; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;">${nutrition.nutrition_grade?.toUpperCase()}</span></p>` : ''}
           
-          <h5>Nutrition per 100g:</h5>
+          <h5>${nutritionLabel}:</h5>
           <div class="nutrition-item"><strong>🔥 Calories:</strong> ${calories}</div>
           <div class="nutrition-item"><strong>🥩 Protein:</strong> ${protein}</div>
           <div class="nutrition-item"><strong>🧈 Fat:</strong> ${fat}</div>
