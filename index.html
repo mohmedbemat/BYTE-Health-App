@@ -118,7 +118,7 @@
       context.drawImage(video, 0, 0, 400, 300);
       const dataURL = canvas.toDataURL("image/png");
 
-      fetch("/upload", {
+      fetch("http://127.0.0.1:5000/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: dataURL })
@@ -146,13 +146,29 @@
       
       showStatus("Scanning for barcode...", "scanning");
 
-      fetch("/scan-barcode", {
+      fetch("http://127.0.0.1:5000/scan-barcode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: dataURL })
       })
-      .then(response => response.json())
+      .then(response => {
+        console.log("Response status:", response.status);
+        console.log("Response headers:", response.headers);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        // Check if response is JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error(`Expected JSON response, got: ${contentType}`);
+        }
+        
+        return response.json();
+      })
       .then(data => {
+        console.log("Received data:", data);
         if (data.status === "success") {
           showStatus(`Barcode found: ${data.barcode}`, "success");
           displayNutritionInfo(data.nutrition);
@@ -163,6 +179,7 @@
         }
       })
       .catch(error => {
+        console.error("Full error:", error);
         showStatus(`Network error: ${error.message}`, "error");
       });
     }
