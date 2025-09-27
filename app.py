@@ -6,6 +6,9 @@ from pyzbar import pyzbar
 from PIL import Image
 import io
 import requests
+import json
+import os
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -89,6 +92,10 @@ def scan_barcode():
         # Get nutrition info from OpenFoodFacts API
         nutrition_info = get_nutrition_info(barcode_data)
         
+        # Save to shared data file for Streamlit
+        if nutrition_info and 'error' not in nutrition_info:
+            save_scanned_food(nutrition_info)
+        
         return jsonify({
             "status": "success",
             "barcode": barcode_data,
@@ -98,6 +105,41 @@ def scan_barcode():
         
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
+
+def save_scanned_food(nutrition_info):
+    """Save scanned food to shared JSON file"""
+    try:
+        # Load existing data
+        data_file = 'scanned_foods.json'
+        if os.path.exists(data_file):
+            with open(data_file, 'r') as f:
+                data = json.load(f)
+        else:
+            data = {'foods': []}
+        
+        # Add new food with timestamp
+        food_entry = {
+            'name': nutrition_info.get('product_name', 'Unknown Product'),
+            'brand': nutrition_info.get('brand', ''),
+            'calories': nutrition_info.get('calories', 0),
+            'protein': nutrition_info.get('protein', 0),
+            'carbs': nutrition_info.get('carbs', 0),
+            'fat': nutrition_info.get('fat', 0),
+            'fiber': nutrition_info.get('fiber', 0),
+            'sugar': nutrition_info.get('sugar', 0),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        data['foods'].append(food_entry)
+        
+        # Save updated data
+        with open(data_file, 'w') as f:
+            json.dump(data, f)
+            
+        print(f"Saved food: {food_entry['name']} ({food_entry['calories']} cal)")
+        
+    except Exception as e:
+        print(f"Error saving food data: {e}")
 
 def get_nutrition_info(barcode):
     """Get nutrition information from OpenFoodFacts API"""
@@ -182,4 +224,4 @@ if __name__ == "__main__":
     print("Available routes:")
     for rule in app.url_map.iter_rules():
         print(f"  {rule.rule} - Methods: {list(rule.methods)}")
-    app.run(debug=True, host='127.0.0.1', port=5000)
+    app.run(debug=True, host='127.0.0.1', port=5001)
