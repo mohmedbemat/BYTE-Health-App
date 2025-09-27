@@ -1,18 +1,1 @@
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Dependencies
-node_modules/
-frontend/node_modules/
-
-# Build outputs
-frontend/build/
-dist/
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
