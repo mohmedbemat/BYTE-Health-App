@@ -137,7 +137,7 @@
       
       const currentTime = Date.now();
       
-      fetch("http://127.0.0.1:5000/scan-barcode", {
+      fetch("http://127.0.0.1:5001/scan-barcode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: dataURL })
@@ -160,7 +160,7 @@
           if (data.barcode !== lastScannedBarcode || (currentTime - lastScanTime) > 5000) {
             lastScannedBarcode = data.barcode;
             lastScanTime = currentTime;
-            showStatus(`✅ Found: ${data.nutrition.product_name}`, "success");
+            showStatus(`Found: ${data.nutrition.product_name}`, "success");
             displayNutritionInfo(data.nutrition);
           }
         } else if (data.status === "no_barcode") {
@@ -169,13 +169,13 @@
             showStatus("🔍 Scanning for barcode...", "scanning");
           }
         } else {
-          showStatus(`❌ Error: ${data.message}`, "error");
+          showStatus(`Error: ${data.message}`, "error");
         }
       })
       .catch(error => {
         console.error("Scan error:", error);
         if ((currentTime - lastScanTime) > 5000) {
-          showStatus(`❌ Connection error: ${error.message}`, "error");
+          showStatus(`Connection error: ${error.message}`, "error");
         }
       });
     }

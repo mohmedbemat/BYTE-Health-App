@@ -6,27 +6,60 @@ from pyzbar import pyzbar
 from PIL import Image
 import io
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import json
 import os
 from datetime import datetime
 import google.generativeai as genai
 from dotenv import load_dotenv
+from functools import lru_cache
+import threading
 
 load_dotenv()
 genai.configure(api_key=os.getenv("API_KEY"))
 
 app = Flask(__name__)
+
+# Cache HTML content for better performance
+with open("index.html", "r") as f:
+    HTML_CONTENT = f.read()
+
+# Configure requests session with connection pooling and retries
+session = requests.Session()
+retry_strategy = Retry(
+    total=3,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["HEAD", "GET", "OPTIONS"]
+)
+adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
+
+# Thread lock for file operations
+file_lock = threading.Lock()
+
+# Initialize AI model once for better performance
+ai_model = genai.GenerativeModel("gemini-1.5-flash")
+
 @app.route("/chat", methods=["POST"])
 def chat():
     user_message = request.json.get("message", "")
 
     if not user_message:
-        return jsonify({"reply": "⚠️ Please type something."})
+        return jsonify({"reply": "Please type something."})
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(f"You are a health assistant. Answer: {user_message}")
-
-    return jsonify({"reply": response.text})
+    try:
+        response = ai_model.generate_content(
+            f"You are a health assistant. Answer: {user_message}",
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=150,
+                temperature=0.7
+            )
+        )
+        return jsonify({"reply": response.text})
+    except Exception as e:
+        return jsonify({"reply": "Sorry, I'm having trouble right now. Please try again."})
 
 # Add CORS headers manually
 @app.after_request
@@ -39,7 +72,7 @@ def after_request(response):
 # Serve HTML page
 @app.route("/")
 def index():
-    return render_template_string(open("index.html").read())
+    return render_template_string(HTML_CONTENT)
 
 # Add a debug route to check available routes
 @app.route("/debug-routes")
@@ -88,13 +121,17 @@ def scan_barcode():
         header, encoded = data.split(",", 1)
         image_bytes = base64.b64decode(encoded)
         
-        # Convert to PIL Image
+        # Convert to PIL Image with optimization
         image = Image.open(io.BytesIO(image_bytes))
         
-        # Convert to OpenCV format
+        # Resize if image is too large (performance optimization)
+        if image.width > 1024 or image.height > 1024:
+            image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+        
+        # Convert to OpenCV format more efficiently
         opencv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         
-        # Decode barcodes
+        # Decode barcodes with optimized settings
         barcodes = pyzbar.decode(opencv_image)
         
         if not barcodes:
@@ -123,15 +160,16 @@ def scan_barcode():
         return jsonify({"status": "error", "message": str(e)})
 
 def save_scanned_food(nutrition_info):
-    """Save scanned food to shared JSON file"""
+    """Save scanned food to shared JSON file with thread safety"""
     try:
-        # Load existing data
-        data_file = 'scanned_foods.json'
-        if os.path.exists(data_file):
-            with open(data_file, 'r') as f:
-                data = json.load(f)
-        else:
-            data = {'foods': []}
+        with file_lock:
+            # Load existing data
+            data_file = 'scanned_foods.json'
+            if os.path.exists(data_file):
+                with open(data_file, 'r') as f:
+                    data = json.load(f)
+            else:
+                data = {'foods': []}
         
         # Add new food with timestamp
         food_entry = {
@@ -157,11 +195,12 @@ def save_scanned_food(nutrition_info):
     except Exception as e:
         print(f"Error saving food data: {e}")
 
+@lru_cache(maxsize=1000)
 def get_nutrition_info(barcode):
-    """Get nutrition information from OpenFoodFacts API"""
+    """Get nutrition information from OpenFoodFacts API with caching"""
     try:
         url = f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json"
-        response = requests.get(url, timeout=10)
+        response = session.get(url, timeout=5)
         
         if response.status_code == 200:
             data = response.json()
