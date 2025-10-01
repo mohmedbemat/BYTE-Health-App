@@ -6,7 +6,7 @@ from datetime import datetime
 
 # Fast page configuration
 st.set_page_config(
-    page_title="BYTE Health Dashboard",
+    page_title="Nutrition Network",
     page_icon="⚕️",
     layout="wide"
 )
@@ -108,7 +108,7 @@ def main():
         setup_profile()
         return
         
-    st.title("BYTE Health Dashboard")
+    st.title("Nutrition Network")
     st.markdown(f"Welcome back, **{st.session_state.user_profile['name']}**!")
     
     # Load data
@@ -183,7 +183,7 @@ def main():
 
 def setup_profile():
     """Fast profile setup function"""
-    st.title("Welcome to BYTE Health!")
+    st.title("Welcome to Nutrition Network!")
     st.markdown("Let's quickly set up your personalized nutrition profile:")
     
     with st.form("profile_setup"):
